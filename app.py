@@ -88,7 +88,7 @@ class ExpenseItem(BaseModel):
 class ExpensesSchema(BaseModel):
     """Schema for processing the structural expense claim card details and items."""
     vehicle_number: str = Field(description="Vehicle registration number found on the document (e.g., TN 54DX 1251)")
-    expense_date: str = Field(description="Expense claim or statement date (e.g., 24/07/2026)")
+    expense_date: str = Field(description="Expense claim or statement date (e.g., 24/07/2026 ,24.07.2026, 24-07-2026 )  ")
     driver_name: Optional[str] = Field(None, description="The name of the driver listed on the form")
     items: List[ExpenseItem] = Field(description="List of all individual items extracted from the table grid rows")
     grand_total: float = Field(description="The final Total Amount value listed at the bottom right corner.")
