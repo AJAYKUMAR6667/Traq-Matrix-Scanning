@@ -74,12 +74,25 @@ class VehicleDocumentSchema(BaseModel):
     
     model_config = ConfigDict(populate_by_name=True)
 
+from typing import List, Optional
+from pydantic import BaseModel, Field, ConfigDict
+
+class ExpenseItem(BaseModel):
+    """Schema for individual item rows inside the particulars table."""
+    particulars: str = Field(description="The name of the item/part (e.g., Tyre, Mirrors, Steering Wheel)")
+    quantity: int = Field(description="The quantity (Qty) value listed for this item row")
+    rate: float = Field(description="The unit price or rate listed for this item row")
+    amount: float = Field(description="The calculated subtotal amount (Qty * Rate) for this item row")
+    remarks: Optional[str] = Field(None, description="Any remarks noted on this specific line item")
+
 class ExpensesSchema(BaseModel):
-    """Schema for processing parts, fuel, maintenance, and structural card totals."""
-    vehicle_number: str = Field(description="Vehicle registration number like TN01AB1234 or AP08AS5506")
-    expense_date: str = Field(description="Expense statement or claim date from the document")
-    expense_category: str = Field(description="Look at the 'Particulars' table grid. Extract all individual listed item names across all rows (e.g., Tyre, Mirrors, Steering Wheel, Oil, Diesel, Parking) and combine them together into a single text string separated by commas.")
-    cost: float = Field(description="The grand Total Amount value listed at the bottom of the statement card only.")
+    """Schema for processing the structural expense claim card details and items."""
+    vehicle_number: str = Field(description="Vehicle registration number found on the document (e.g., TN 54DX 1251)")
+    expense_date: str = Field(description="Expense claim or statement date (e.g., 24/07/2026)")
+    driver_name: Optional[str] = Field(None, description="The name of the driver listed on the form")
+    items: List[ExpenseItem] = Field(description="List of all individual items extracted from the table grid rows")
+    grand_total: float = Field(description="The final Total Amount value listed at the bottom right corner.")
+    image_url: Optional[str] = Field(None, description="The URL or file link of the processed image document")
     
     model_config = ConfigDict(populate_by_name=True)
 
