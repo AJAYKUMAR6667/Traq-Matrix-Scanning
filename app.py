@@ -6,9 +6,10 @@ from typing import List, Optional
 from pydantic import BaseModel, Field, ConfigDict
 from llama_cloud import LlamaCloud
 
-app = FastAPI(title="Vehicle, Expense & Document Extraction Service Fast")
+app = FastAPI(title="Unified Driver, Vehicle & Expense KYC Extraction Service")
 
-# Initialize the official client SDK
+# Initialize the official LlamaIndex Cloud client SDK
+# Note: It is best practice to source this entirely from environment variables in production
 LLAMA_CLOUD_API_KEY = os.getenv(
     "LLAMA_CLOUD_API_KEY", 
     "llx-KGq9lskPn7hyyxd7UZcbePLsAbjMZ2WcS3HsSjlc93LKinp3"
@@ -17,11 +18,52 @@ client = LlamaCloud(api_key=LLAMA_CLOUD_API_KEY)
 
 # Optimized polling configuration for fast execution
 MAX_POLL_SECONDS = 30
-POLL_INTERVAL_SECONDS = 0.5  # Check every 0.5s instead of 2.0s for speed
+POLL_INTERVAL_SECONDS = 0.5
 
 # ==============================================================================
-# SECTION 1: UPDATED DATA SCHEMAS
+# SECTION 1: UNIFIED DATA SCHEMAS
 # ==============================================================================
+
+class AddressDetails(BaseModel):
+    address_line_1: Optional[str] = Field(default="", description="House/Flat number, street name, locality")
+    address_line_2: Optional[str] = Field(default="", description="Additional street details, landmark, village")
+    district_city: Optional[str] = Field(default="", description="District or City name")
+    state_province: Optional[str] = Field(default="", description="State or Province")
+    postal_Code: Optional[str] = Field(default="", description="Pincode / Postal Code")
+    country: Optional[str] = Field(default="", description="Country name")
+
+class AadharBackSchema(BaseModel):
+    """Schema for processing demographic address information from card backings."""
+    Address: AddressDetails = Field(description="Structured full residential address block details")
+    
+    model_config = ConfigDict(populate_by_name=True)
+
+class PanSchema(BaseModel):
+    """Schema for processing corporate/individual tax registration cards."""
+    Pan_No: str = Field(description="Permanent Account Number (PAN) alpha-numeric string")
+    Pan_Name: str = Field(description="Full name printed on the card face")
+    Father_Name: Optional[str] = Field(default="", description="Father's name printed on the card")
+    
+    model_config = ConfigDict(populate_by_name=True)
+
+class PassbookSchema(BaseModel):
+    """Schema for parsing primary financial institution bank passbooks/statements."""
+    Account_No: str = Field(description="Bank operational account number string")
+    IFSC_Code: str = Field(description="11-character Indian Financial System Code (IFSC)")
+    Bank_Name: str = Field(description="Full clearing bank brand title")
+    CIF: Optional[str] = Field(default="", description="Customer Information File (CIF) number if visible")
+    
+    model_config = ConfigDict(populate_by_name=True)
+
+class DrivingLicenceSchema(BaseModel):
+    """Schema for processing transport regulatory operator driving licenses."""
+    DL_No: str = Field(description="Driving Licence number identifier string")
+    DL_Owner_Name: str = Field(description="Full name of the licensee")
+    Date_of_Issue: str = Field(description="Licence issuance date stamp. Standardize cleanly to dd/MM/yyyy format.")
+    Valid_To: str = Field(description="Licence expiry or validity baseline limit date. Standardize cleanly to dd/MM/yyyy format.")
+    Blood_Group: Optional[str] = Field(default="", description="Extracted blood group type notation (e.g., O+, AB-, B+)")
+    
+    model_config = ConfigDict(populate_by_name=True)
 
 class VehicleDocumentSchema(BaseModel):
     """Schema for processing core vehicle logs and certificates."""
@@ -50,7 +92,12 @@ class IdentityDocumentSchema(BaseModel):
     
     model_config = ConfigDict(populate_by_name=True)
 
+# Unified mapping logic covering both Driver and Vehicle operational flows
 SCHEMA_MAP = {
+    "aadhar_back": AadharBackSchema,
+    "pan": PanSchema,
+    "passbook": PassbookSchema,
+    "driving_licence": DrivingLicenceSchema,
     "vehicle_document": VehicleDocumentSchema,
     "expenses": ExpensesSchema,
     "aadhar": IdentityDocumentSchema,
@@ -74,16 +121,20 @@ def _resolve_media_type(filename: str) -> str:
     )
 
 # ==============================================================================
-# SECTION 3: ENDPOINTS
+# SECTION 3: UNIFIED ENDPOINT
 # ==============================================================================
 
 @app.post("/extract")
 async def extract_document(
     file: UploadFile = File(...),
-    doc_type: str = Query(..., description="Schema selection: vehicle_document, expenses, aadhar")
+    doc_type: str = Query(
+        ..., 
+        description="Schema selection: aadhar_back, pan, passbook, driving_licence, vehicle_document, expenses, aadhar"
+    )
 ):
     """
-    Submits extraction to LlamaIndex production and runs a sub-second optimized polling engine.
+    Submits extraction jobs to LlamaIndex production and runs a sub-second optimized polling engine.
+    Supports driver KYC processing, logistics invoices, and registration parsing pipelines seamlessly.
     """
     schema_cls = SCHEMA_MAP.get(doc_type)
     if schema_cls is None:
@@ -96,7 +147,7 @@ async def extract_document(
     file_bytes = await file.read()
 
     try:
-        # 1. Safely upload the binary content via the native SDK
+        # 1. Safely upload the binary content via the native SDK execution framework
         uploaded_file = await run_in_threadpool(
             client.files.create,
             file=(file.filename, file_bytes, media_type),
@@ -129,9 +180,15 @@ async def extract_document(
         if job.status == "COMPLETED":
             return job.extract_result
         else:
-            raise HTTPException(status_code=500, detail=f"LlamaCloud extraction pipeline failed with status: {job.status}")
+            raise HTTPException(
+                status_code=500, 
+                detail=f"LlamaCloud extraction pipeline failed with status: {job.status}"
+            )
 
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Extraction runtime exception: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Extraction runtime exception: {str(e)}"
+        )
