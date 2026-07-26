@@ -69,13 +69,39 @@ class VehicleDocumentSchema(BaseModel):
     """Schema for processing core vehicle logs and certificates."""
     vehicle_number: str = Field(description="Vehicle registration number like TN01AB1234")
     document_type: str = Field(description="Document type. Return only one of these values: RC, Insurance, Permit, Fitness Certificate, Pollution Certificate, Road Tax")
-    issue_date: str = Field(description="Issue date printed on the document")
-    expiry_date: str = Field(description="Expiry date or Valid Upto date printed on the document")
+    
+    # Updated descriptions to guide the LLM on the expected format
+    issue_date: str = Field(description="Issue date printed on the document. Always format as DD/MMM/YYYY (e.g., 15/Jul/2014)")
+    expiry_date: str = Field(description="Expiry date or Valid Upto date printed on the document. Always format as DD/MMM/YYYY (e.g., 15/Jul/2014)")
     
     model_config = ConfigDict(populate_by_name=True)
 
-from typing import List, Optional
-from pydantic import BaseModel, Field, ConfigDict
+    @field_validator('issue_date', 'expiry_date')
+    @classmethod
+    def format_date_string(cls, v: str) -> str:
+        # Clean up common spacing anomalies from OCR/LLM outputs
+        cleaned = v.strip()
+        
+        # List of expected input formats to try parsing
+        input_formats = [
+            "%d-%m-%Y %H:%M",  # 15-07-2014 14:51
+            "%d-%m-%Y",        # 15-07-2014
+            "%d/%m/%Y",        # 15/07/2014
+            "%d/%b/%Y",        # 15/Jul/2014
+            "%d-%b-%Y"         # 15-Jul-2014
+        ]
+        
+        for fmt in input_formats:
+            try:
+                # Parse the incoming string into a datetime object
+                dt = datetime.strptime(cleaned, fmt)
+                # Return the unified target string format: 15/Jul/2014
+                return dt.strftime("%d/%b/%Y")
+            except ValueError:
+                continue
+                
+        raise ValueError(f"Date '{v}' could not be parsed into DD/MMM/YYYY format.")
+
 
 class ExpenseItem(BaseModel):
     """Schema for individual item rows inside the particulars table."""
